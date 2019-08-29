@@ -56,18 +56,12 @@ export class WorkPackageChangeset extends EditChangeset<WorkPackageResource> {
   public wpActivity:WorkPackagesActivityService = this.injector.get(WorkPackagesActivityService);
   public halResourceService:HalResourceService = this.injector.get(HalResourceService);
 
-  // The changeset to be applied to the work package
-  // private changes:{ [attribute:string]:any } = {};
   public inFlight:boolean = false;
-
-  // The current editing resource
-  public editingResource:WorkPackageResource|null;
 
   private wpFormPromise:Promise<FormResource>|null;
 
   public reset(key:string) {
     delete this.changes[key];
-    this.buildResource();
   }
 
   public isChanged(attribute:string) {
@@ -116,15 +110,18 @@ export class WorkPackageChangeset extends EditChangeset<WorkPackageResource> {
   /**
    * Update the form resource from the API.
    */
-  public updateForm():Promise<FormResource> {
+  public updateForm():Promise<FormResource<WorkPackageResource>> {
     let payload = this.buildPayloadFromChanges();
+
+    if (!this.changedAttributes.includes('description')) {
+      delete payload.description;
+    }
 
     if (!this.wpFormPromise) {
       this.wpFormPromise = this.resource.$links
         .update(payload)
         .then((form:FormResource) => {
           this.form = form;
-          this.rebuildDefaults(form.payload);
 
           this.buildResource();
 
@@ -157,7 +154,7 @@ export class WorkPackageChangeset extends EditChangeset<WorkPackageResource> {
             return reject(errors);
           }
 
-          this.resource.$links.updateImmediately(payload)
+          form.$links.commit(payload)
             .then((savedWp:WorkPackageResource) => {
               // Ensure the schema is loaded before updating
               this.schemaCacheService.ensureLoaded(savedWp).then(() => {
@@ -180,12 +177,11 @@ export class WorkPackageChangeset extends EditChangeset<WorkPackageResource> {
                 if (this.resource.parent) {
                   this.wpCacheService.loadWorkPackage(this.resource.parent.id.toString(), true);
                 }
-                this.editingResource = null;
                 this.clear();
                 resolve(this.resource);
               });
             })
-            .catch(error => {
+            .catch((error:any) => {
               // Update the resource anyway
               this.buildResource();
               reject(error);
@@ -198,21 +194,6 @@ export class WorkPackageChangeset extends EditChangeset<WorkPackageResource> {
       .catch(() => this.inFlight = false);
 
     return promise;
-  }
-
-  /**
-   * Rebuild default attributes we know might change
-   * Will only apply for new work packages.
-   */
-  private rebuildDefaults(payload:HalResource) {
-    if (!this.resource.isNew) {
-      return;
-    }
-
-    // Take over the description from the form
-    // Either it's the same as our changeset or it was set by
-    // a default type value.
-    this.setValue('description', payload.description);
   }
 
   /**
@@ -301,10 +282,10 @@ export class WorkPackageChangeset extends EditChangeset<WorkPackageResource> {
     }
 
     if (isArray && isArrayType) {
-      var links:{ href:string }[] = [];
+      let links:{ href:string }[] = [];
 
       if (val) {
-        var elements = (val.forEach && val) || val.elements;
+        let elements = (val.forEach && val) || val.elements;
 
         elements.forEach((link:{ href:string }) => {
           if (link.href) {
@@ -318,15 +299,6 @@ export class WorkPackageChangeset extends EditChangeset<WorkPackageResource> {
       return {href: _.get(val, 'href', null)};
     }
   }
-
-  /**
-   * Get the best schema currently available, either the default WP schema (must exist).
-   * If loaded, return the form schema, which provides better information on writable status
-   * and contains available values.
-   */
-  //public get schema():SchemaResource {
-  //  return (this.form || this.resource).schema;
-  //}
 
   /**
    * Check whether the given attribute is writable.
@@ -352,18 +324,16 @@ export class WorkPackageChangeset extends EditChangeset<WorkPackageResource> {
   }
 
   private buildResource() {
-    if (this.empty) {
-      this.editingResource = null;
-      this.wpEditing.updateValue(this.resource.id!, this);
-      return;
-    }
+    let payload:any = Object.assign({},
+                                    this.form!.payload.$source,
+                                    { id: this.resource.id });
 
-    let payload:any = { ... this.resource.$source };
+    payload._links['update'] = { href: this.resource.$links.update.$link.href, method: 'post' };
 
     const resource = this.halResourceService.createHalResourceOfType('WorkPackage', this.mergeWithPayload(payload));
 
     resource.overriddenSchema = this.schema;
-    this.editingResource = (resource as WorkPackageResource);
+    this.resource = (resource as WorkPackageResource);
     this.wpEditing.updateValue(this.resource.id!, this);
   }
 }
