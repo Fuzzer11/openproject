@@ -56,12 +56,10 @@ module DemoData
       end
     end
 
-    def create_attribute_help_text help_text_attr
+    def create_attribute_help_text(help_text_attr)
       help_text_attr[:type] = AttributeHelpText::WorkPackage
 
       attribute_help_text = AttributeHelpText.new help_text_attr
-      #attribute_help_text = AttributeHelpText.new {"AttributeHelpText::WorkPackage" }
-      #attribute_help_text = AttributeHelpText.new AttributeHelpText::WorkPackage, help_text_attr[:attribute], help_text_attr[:help_text]
       attribute_help_text.save
     end
   end
